@@ -14,6 +14,31 @@ var sqs = new AWS.SQS({apiVersion: '2012-11-05'});
 var seq = 0;
 
 
+
+app.get("/createQeue/:id", function(req, res){
+	console.log("Entrou no createQeue - "+ req.params.id);
+	var params = {
+	  "QueueName": req.params.id+".fifo",
+	 Attributes: {
+    	'FifoQueue': "true"
+		}   
+	  
+	};
+	sqs.createQueue(params, function(err, data) {
+	  if (err) {console.log(err, err.stack);
+	  	res.json({succes: false, urlQeue: ""});
+	  } // an error occurred
+	  else{
+	  	console.log(data.QueueUrl); 
+	  	res.json({succes: true, urlQeue: data.QueueUrl});
+
+	  }      
+	           // successful response
+	});
+
+
+});
+
 /*var params = {
   QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo', 
   AttributeNames: ["All"]
