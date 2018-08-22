@@ -5,13 +5,14 @@ var morgan      = require('morgan');
 var mongoose    = require('mongoose');
 var AWS = require('aws-sdk');
 var uuid = require('uuid');
-
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 var jwt    = require('jsonwebtoken'); 
 //var config = require('./config'); 
 
 var credentials = AWS.config.loadFromPath('./config.json');
 var sqs = new AWS.SQS({apiVersion: '2012-11-05'});
-var seq = 0;
+
 
 
 
@@ -30,7 +31,7 @@ app.get("/createQeue/:id", function(req, res){
 	  } // an error occurred
 	  else{
 	  	console.log(data.QueueUrl); 
-	  	res.json({succes: true, urlQeue: data.QueueUrl});
+	  	res.json({success: true, urlQeue: data.QueueUrl});
 
 	  }      
 	           // successful response
@@ -39,14 +40,7 @@ app.get("/createQeue/:id", function(req, res){
 
 });
 
-/*var params = {
-  QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo', 
-  AttributeNames: ["All"]
-};
-sqs.getQueueAttributes(params, function(err, data) {
-  if (err) console.log(err, err.stack); // an error occurred
-  else     console.log(data);           // successful response
-});*/
+
 
 
 
@@ -119,6 +113,9 @@ sqs.receiveMessage(params, function(err, data) {
 });
 
 });
+
+
+
 function sendMessages(num){
 	var obj ={};
 	
@@ -161,7 +158,7 @@ function sendMessages(num){
 	  } // an error occurred
 	  else {
 	  	console.log(data);
-	  	seq++;
+	  
 	  }; 
 	    //res.json({data: data});  
 	       // successful response
@@ -169,151 +166,214 @@ function sendMessages(num){
 	return num; 
 	
 }
-app.get("/criar", function(req, res){
+
+
+app.get("/enviarMenssagem/:id/:latitude/:longitude", function(req, res){
 	
+	var url = "";
+	var num = 0;
+	getQeueURL(req.params.id, function(val){
+		url = val;
+		console.log("URL retornado do getQeueURL - "+ url);
+		getNumeroMensagens(url, function(val){
+
+		num = parseInt(val);
+		console.log("Num retornado do getNumeroMensagens - "+ num);
+
+		if(num < 10){
+			enviarMensagem(res, url, req.params.latitude, req.params.longitude, req.params.id, function(msg){
+
+				res.json(msg);
+			});
+		}else{
+
+			deletarMensagensSobressalentes(num, url, function(data){
+					if(data.success){
+						enviarMensagem(res, url, req.params.latitude, req.params.longitude, req.params.id, function(msg){
+
+							res.json(msg);
+						});
+					}else{
+						res.json({success: false});
+					}
+				
+			});
+		}
+	});
+
+	});
+ 
+
+});
+
+app.get("/receberMensagens/:id", function(req, res){
+		getQeueURL(req.params.id, function(url){
+
+			receberMenssagens(url, function(messages){
+
+				res.json({messages});
+			});
+
+		});
+
+})
+
+app.get("/removerFila/:id", function(req, res){
+	getQeueURL(req.params.id, function(url){
+
+		removerFila(url, function(data){
+			res.json(data);
+		})
+	});
+
+
+});
+
+function removerFila(url, fn){
+	var params = {
+	  QueueUrl: url /* required */
+	};
+	sqs.deleteQueue(params, function(err, data) {
+	  if(err){
+	  	console.log(err, err.stack);
+	  	fn({success: false, data: data});
+	  }else{
+	  console.log(data); 
+	 	 fn({success: true, data: data});
+	  }          // successful response
+	});
+}
+
+function receberMenssagens(url, fn){
+	var params = {
+  QueueUrl: url,
+  AttributeNames: ["All"],
+  MaxNumberOfMessages: 10,
+  MessageAttributeNames: ["All"],
+  
+  VisibilityTimeout:30,
+  WaitTimeSeconds: 0
+};
+sqs.receiveMessage(params, function(err, data) {
+  if(err){console.log(err, err.stack);} // an error occurred
+  else{
+  console.log(data);
+  	fn(data.Messages);
+  	}           // successful response
+});
+
+}
+
+function getNumeroMensagens(qeueURL,fn){
+	var params = {
+	  QueueUrl: qeueURL, 
+	  AttributeNames: ["All"]
+	};
+	sqs.getQueueAttributes(params, function(err, data) {
+	  if (err) console.log(err, err.stack); // an error occurred
+	  else{
+	  		
+	  	//console.log(JSON.stringify(data));
+	  	console.log(data.Attributes["ApproximateNumberOfMessages"]);
+	  	fn(data.Attributes["ApproximateNumberOfMessages"]);
+	  }           // successful response
+	});
+
+}
+
+
+function getQeueURL(qeueName, fn){
+	var params = {
+	  QueueName: qeueName+".fifo", /* required */
+	 
+	};
+	sqs.getQueueUrl(params, function(err, data) {
+	  if(err){ console.log(err, err.stack);} // an error occurred
+	  else {
+	  	console.log(data.QueueUrl);
+	  	 fn(data.QueueUrl);
+	  }
+	           
+	});
+}
+
+function enviarMensagem(res, url, latitude, longitude, id, fn){
 	var params = {
  
- MessageAttributes: {
-  "Title": {
-    DataType: "String",
-    StringValue: "The Whistler"
-   },
-  "Author": {
-    DataType: "String",
-    StringValue: "John Grisham"
-   },
-  "WeeksOn": {
-    DataType: "Number",
-    StringValue: "6"
-   }
- },
- MessageBody: ""+seq,
- MessageGroupId: "vicentinho_"+seq,
- MessageDeduplicationId: "vicentinho__"+seq,
+	 MessageAttributes: {
+	  "Latitude": {
+	    DataType: "String",
+	    StringValue: latitude
+	   },
+	  "Longitude": {
+	    DataType: "String",
+	    StringValue: longitude
+	   }
+	 },
+	 MessageBody: "Inserção de latitude e longitude",
+	 MessageGroupId: id,
+	 MessageDeduplicationId: id+latitude+longitude,
 
- QueueUrl: "https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo"
+	 QueueUrl: url
+	};
+	
+
+	sqs.sendMessage(params, function(err, data) {
+	  if (err) {
+	    console.log("Error", err);
+	  } else {
+	    console.log("Success", data.MessageId);
+	   
+	  }
+	   fn({success: true, data: data.MessageId});
+	});
+
+}
+function deletarMensagensSobressalentes(num, url, fn){
+	num = num - 9
+
+	var params = {
+  QueueUrl: url,
+  AttributeNames: ["SentTimestamp"],
+  MaxNumberOfMessages: num,
+  MessageAttributeNames: ["All"],
+  
+  VisibilityTimeout: 30,
+  WaitTimeSeconds: 0
 };
-seq++;
-sqs.sendMessage(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.MessageId);
-   
-  }
-   res.json({data: data.MessageId, seq: seq});
+sqs.receiveMessage(params, function(err, data) {
+  if(err) console.log(err, err.stack); // an error occurred
+  else{
+  	//fn(data);
+  	var i;
+  	var msg = data.Messages;
+  	var paramsDel = {
+		  	Entries: [],
+		  QueueUrl: url 
+		};
+	var obj ={};	
+  	for(i=0; i < msg.length; i++){
+  		obj = {
+	      Id: msg[i].MessageId, 
+	      ReceiptHandle: msg[i].ReceiptHandle 
+	    }
+	    paramsDel.Entries.push(obj);
+  	}
+
+		 //console.log(JSON.stringify(paramsDel));
+		sqs.deleteMessageBatch(paramsDel, function(err, data) {
+		  if(err) console.log(err, err.stack); // an error occurred
+		  else{console.log(data); 
+		  fn({success: true, message: msg});
+		}
+		     
+		});
+
+  }          
 });
 
-/*var num = 0;
-var i;
-	for(i = 0;i<10;i++){
-		console.log("VALOR DE NUM --- "+ num);
-		num = sendMessages(num);
-	}
-	res.json({success: true});/*
+}
 
-
-
-
-
-
-
-/*sqs.sendMessage(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.MessageId);
-   
-  }
-   res.json({data: data.MessageId, body: data.MessageAttributes});
-});*/
-
-//res.json({data: "fude", body: "ow droga"});
-});
-
-/*var params = {
- 
- MessageAttributes: {
-  "Title": {
-    DataType: "String",
-    StringValue: "The Whistler"
-   },
-  "Author": {
-    DataType: "String",
-    StringValue: "John Grisham"
-   },
-  "WeeksOn": {
-    DataType: "Number",
-    StringValue: "6"
-   }
- },
- MessageBody: "Information about current NY Times fiction bestseller for week of 12/11/2016.",
- MessageGroupId: "vicentinho090909",
- MessageDeduplicationId: "vicentinho090909111111",
-
- QueueUrl: "https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo"
-};
-
-sqs.sendMessage(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.MessageId);
-  }
-});*/
-
-/*var params = {
-  QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo'
- };
-
-sqs.deleteQueue(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data);
-  }
-});*/
-
-
-
-var params = {
-  QueueName: 'Lista.fifo'
-};
-
-sqs.getQueueUrl(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.QueueUrl);
-  }
-});
-
-
-
-/*var params = {
-  QueueName: 'lista',
-  Attributes: {
-    'DelaySeconds': '60',
-    'MessageRetentionPeriod': '86400'
-  }
-};
-
-sqs.createQueue(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.QueueUrl);
-  }
-});*/
-
-/*var params= {};
-sqs.listQueues(params, function(err, data) {
-  if (err) {
-    console.log("Error", err);
-  } else {
-    console.log("Success", data.QueueUrls);
-  }
-});*/
 
 
 var port = process.env.PORT || 8090; 
