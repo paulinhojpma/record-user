@@ -11,7 +11,17 @@ var jwt    = require('jsonwebtoken');
 
 var credentials = AWS.config.loadFromPath('./config.json');
 var sqs = new AWS.SQS({apiVersion: '2012-11-05'});
+var seq = 0;
 
+
+/*var params = {
+  QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo', 
+  AttributeNames: ["All"]
+};
+sqs.getQueueAttributes(params, function(err, data) {
+  if (err) console.log(err, err.stack); // an error occurred
+  else     console.log(data);           // successful response
+});*/
 
 
 
@@ -21,7 +31,7 @@ app.get("/receber", function(req, res){
  AttributeNames: [
     "SentTimestamp"
  ],
- MaxNumberOfMessages: 10,
+ MaxNumberOfMessages: 1,
  MessageAttributeNames: [
     "All"
  ],
@@ -36,14 +46,41 @@ sqs.receiveMessage(params, function(err, data) {
     console.log("Receive Error", err);
   } else if (data.Messages) {
   	//console.log("Mensagens recebidas - "+ JSON.stringify(data.Messages[0]));
-  	console.log("Mensagens recebidas id- "+ data.Messages[0].MessageId);
+  	//console.log("Mensagens recebidas id- "+ data.Messages[0].MessageId);
   	console.log("Mensagens recebidas body- "+ data.Messages[0].Body);
   	//console.log("Mensagens recebidas autor sem - "+ data.Messages[0].MessageAttributes["Author"]["StringValue"]);
   	 //console.log("Mensagens recebidas autor com - "+ JSON.stringify(data.Messages[0].MessageAttributes["Author"]["StringValue"]));
+  	
+
   	msg = data.Messages;
+  	/*for(var i = 0; i < data.Messages.length; i++){
+  		console.log("ID - "+ data.Messages[i].Body);
+  	}
+
+  	var i;
+  	var paramsDel = {
+		  	Entries: [],
+		  QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo' 
+		};
+	var obj ={};	
+  	for(i=0; i < msg.length; i++){
+  		obj = {
+	      Id: msg[i].MessageId, 
+	      ReceiptHandle: msg[i].ReceiptHandle 
+	    }
+	    paramsDel.Entries.push(obj);
+  	}
+
+		  console.log(JSON.stringify(paramsDel));
+		sqs.deleteMessageBatch(paramsDel, function(err, data) {
+		  if (err) console.log(err, err.stack); // an error occurred
+		  else     console.log(data);   
+		  res.json({message: data});        // successful response
+		});*/
+
     var deleteParams = {
       QueueUrl: "https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo",
-      ReceiptHandle: data.Messages.ReceiptHandle
+      ReceiptHandle: data.Messages[0].ReceiptHandle
     };
     sqs.deleteMessage(deleteParams, function(err, data) {
       if (err) {
@@ -57,51 +94,59 @@ sqs.receiveMessage(params, function(err, data) {
 });
 
 });
-
-app.get("/criar", function(req, res){
+function sendMessages(num){
 	var obj ={};
-	var id = 0;var params = {
+	
+	var lim = num +10;
+	var params = {
 	  Entries: [],
 	  QueueUrl: 'https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo' /* required */
 	};
+	
 	var i;
-
-	for(i =0; i < 10 ; i++){
-		
+	for(num; num < lim ; num++){
+		console.log("DENTRO DO SENDMESSAGES --- "+ num);
 		
 		obj = {
-	      Id: 'vicente_'+i, /* required */
-	      MessageBody: 'Ronaldo_'+i, /* required */
+	      Id: 'vicente_'+num, /* required */
+	      MessageBody: ''+num, /* required */
 	      DelaySeconds: 0,
 	      MessageAttributes: {
 	        "Ronaldo": {
 	          DataType: 'String', /* required */	          
-	          StringValue: 'spock_'+i
+	          StringValue: 'spock_'+num
 	        }
 	        
 	      },
 
-	      MessageDeduplicationId:"vicentinho"+ ((1+i)*2),
-	      MessageGroupId: "klebernilton_"+i
+	      MessageDeduplicationId:"vicentinho"+num, //((1+i)*2),
+	      MessageGroupId: "klebernilton_"+num
 	    };
 
 	    params.Entries.push(obj);
-	     console.log("Loop - "+ obj["Id"]);
+	    
 
 
 	}
-	console.log(JSON.stringify(params));
+	//console.log(JSON.stringify(params));
 
 	sqs.sendMessageBatch(params, function(err, data) {
 	  if (err){ console.log(err, err.stack);
 
 	  } // an error occurred
-	  else {    console.log(data);
+	  else {
+	  	console.log(data);
+	  	seq++;
 	  }; 
-	    res.json({data: data}) ;      // successful response
+	    //res.json({data: data});  
+	       // successful response
 	});
-
-	/*var params = {
+	return num; 
+	
+}
+app.get("/criar", function(req, res){
+	
+	var params = {
  
  MessageAttributes: {
   "Title": {
@@ -117,12 +162,33 @@ app.get("/criar", function(req, res){
     StringValue: "6"
    }
  },
- MessageBody: "Information about current NY Times fiction bestseller for week of 12/11/2016.",
- MessageGroupId: "vicentinho090909",
- MessageDeduplicationId: "vicentinho090909111111",
+ MessageBody: ""+seq,
+ MessageGroupId: "vicentinho_"+seq,
+ MessageDeduplicationId: "vicentinho__"+seq,
 
  QueueUrl: "https://sqs.us-east-2.amazonaws.com/700728690443/Lista.fifo"
-};*/
+};
+seq++;
+sqs.sendMessage(params, function(err, data) {
+  if (err) {
+    console.log("Error", err);
+  } else {
+    console.log("Success", data.MessageId);
+   
+  }
+   res.json({data: data.MessageId, seq: seq});
+});
+
+/*var num = 0;
+var i;
+	for(i = 0;i<10;i++){
+		console.log("VALOR DE NUM --- "+ num);
+		num = sendMessages(num);
+	}
+	res.json({success: true});/*
+
+
+
 
 
 
